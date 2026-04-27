@@ -17,9 +17,11 @@
 
                     this.vid = video;
 
+                    // original ratio
                     video.addEventListener('loadedmetadata', function () {
                         const aspect = video.videoWidth / video.videoHeight;
 
+                        // height base
                         const displayHeight = 1.4;
                         const displayWidth = displayHeight * aspect;
 
@@ -27,10 +29,12 @@
                         videoPlane.setAttribute('height', displayHeight);
                     });
 
+                    // play only once
                     video.addEventListener('ended', function () {
                         hasEnded = true;
                         video.pause();
 
+                        // keep last frame
                         if (video.duration) {
                             video.currentTime = video.duration;
                         }
@@ -52,6 +56,7 @@
                     });
 
                     marker.addEventListener('markerLost', function () {
+                        //just in case
                         if (!hasEnded) {
                             video.pause();
                         }
