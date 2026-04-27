@@ -13,96 +13,173 @@
                     height: { type: 'number', default: 1.4 }
                 },
 
-init: function () {
-    const plane = this.el;
-    const video = this.data.video;
-    const marker = plane.closest('a-marker');
+                init: function () {
+                    const plane = this.el;
+                    const video = this.data.video;
+                    const marker = plane.closest('a-marker');
 
-    let hasStarted = false;
-    let hasFinished = false;
-    let userUnlocked = false;
+                    let markerVisible = false;
 
-    // with sound
-    const unlockAudio = () => {
-        if (userUnlocked) return;
-        userUnlocked = true;
+                    let silentStarted = false;
+                    let silentFinished = false;
 
-        video.muted = false;
-        video.volume = 1;
+                    let soundStarted = false;
+                    let soundFinished = false;
 
-        video.play().then(() => {
-            video.pause();
-            video.currentTime = 0;
-        }).catch((err) => {
-            console.log('Initial audio unlock failed:', err);
-        });
-    };
+                    let mode = 'idle';
+                    // idle / silent / silent-ended / sound / sound-ended
 
-    document.addEventListener('click', unlockAudio, { once: true });
-    document.addEventListener('touchstart', unlockAudio, { once: true });
+                    if (!video || !marker) {
+                        console.warn('Video or marker not found.');
+                        return;
+                    }
 
-    if (!video || !marker) {
-        console.warn('Video or marker not found.');
-        return;
-    }
+                    // Set the video for muted autoplay first.
+                    video.muted = true;
+                    video.setAttribute('muted', '');
+                    video.playsInline = true;
+                    video.setAttribute('playsinline', '');
+                    video.setAttribute('webkit-playsinline', '');
+                    video.load();
 
-    // vertical
-    const fallbackAspect = 9 / 16;
-    this.setPlaneSize(fallbackAspect);
+                    // Use a portrait fallback size first, so it does not appear as a square before metadata is loaded.
+                    const fallbackAspect = 9 / 16;
+                    this.setPlaneSize(fallbackAspect);
 
-    plane.setAttribute('material', {
-        shader: 'flat',
-        src: '#vid',
-        side: 'double'
-    });
+                    // Apply the video texture to the plane.
+                    plane.setAttribute('material', {
+                        shader: 'flat',
+                        src: '#vid',
+                        side: 'double'
+                    });
 
-    const applyAspectRatio = () => {
-        if (video.videoWidth && video.videoHeight) {
-            const aspect = video.videoWidth / video.videoHeight;
-            this.setPlaneSize(aspect);
-            console.log('Video aspect applied:', video.videoWidth, video.videoHeight, aspect);
-        } else {
-            console.warn('Video metadata not available. Using fallback 9:16.');
-        }
-    };
+                    const applyAspectRatio = () => {
+                        if (video.videoWidth && video.videoHeight) {
+                            const aspect = video.videoWidth / video.videoHeight;
+                            this.setPlaneSize(aspect);
+                            console.log('Video aspect applied:', video.videoWidth, video.videoHeight, aspect);
+                        }
+                    };
 
-    if (video.readyState >= 1) {
-        applyAspectRatio();
-    } else {
-        video.addEventListener('loadedmetadata', applyAspectRatio, { once: true });
-    }
+                    if (video.readyState >= 1) {
+                        applyAspectRatio();
+                    } else {
+                        video.addEventListener('loadedmetadata', applyAspectRatio, { once: true });
+                    }
 
-    video.addEventListener('ended', () => {
-        hasFinished = true;
-        video.pause();
+                    const stopAtLastFrame = () => {
+                        video.pause();
 
-        if (video.duration && isFinite(video.duration)) {
-            video.currentTime = Math.max(video.duration - 0.05, 0);
-        }
-    });
+                        // Some browsers may show a black frame or jump back to the first frame at the exact duration.
+                        // Stop slightly before the end to keep the final frame visible.
+                        if (video.duration && isFinite(video.duration)) {
+                            video.currentTime = Math.max(video.duration - 0.05, 0);
+                        }
+                    };
 
-    marker.addEventListener('markerFound', () => {
-        if (hasFinished) return;
+                    const playSilentOnce = () => {
+                        if (silentStarted || soundStarted) return;
 
-        video.muted = false;
-        video.volume = 1;
+                        silentStarted = true;
+                        mode = 'silent';
 
-        if (!hasStarted) {
-            hasStarted = true;
-            video.currentTime = 0;
-        }
+                        video.muted = true;
+                        video.setAttribute('muted', '');
+                        video.currentTime = 0;
 
-        video.play().catch((error) => {
-            console.warn('Video play failed:', error);
-        });
-    });
+                        video.play().catch((error) => {
+                            console.warn('Silent video play failed:', error);
+                        });
+                    };
 
-    marker.addEventListener('markerLost', () => {
-        if (!hasFinished) {
-            video.pause();
-        }
-    });
-},
+                    const playSoundOnceFromStart = () => {
+                        if (soundStarted || soundFinished) return;
+
+                        soundStarted = true;
+                        mode = 'sound';
+
+                        // Switch to sound playback when the user taps the screen.
+                        video.muted = false;
+                        video.removeAttribute('muted');
+                        video.volume = 1;
+
+                        // Restart from the beginning for the sound playback.
+                        video.pause();
+                        video.currentTime = 0;
+
+                        video.play().catch((error) => {
+                            console.warn('Sound video play failed:', error);
+                        });
+                    };
+
+                    video.addEventListener('ended', () => {
+                        if (mode === 'silent') {
+                            silentFinished = true;
+                            mode = 'silent-ended';
+                            stopAtLastFrame();
+                            return;
+                        }
+
+                        if (mode === 'sound') {
+                            soundFinished = true;
+                            mode = 'sound-ended';
+                            stopAtLastFrame();
+                            return;
+                        }
+
+                        stopAtLastFrame();
+                    });
+
+                    marker.addEventListener('markerFound', () => {
+                        markerVisible = true;
+
+                        // Play the video once in muted mode when the marker is detected.
+                        if (!silentStarted && !soundStarted) {
+                            playSilentOnce();
+                            return;
+                        }
+
+                        // Resume muted playback only if it was paused before finishing.
+                        if (mode === 'silent' && !silentFinished) {
+                            video.muted = true;
+                            video.play().catch((error) => {
+                                console.warn('Silent resume failed:', error);
+                            });
+                        }
+
+                        // Resume sound playback only if it was paused before finishing.
+                        if (mode === 'sound' && !soundFinished) {
+                            video.muted = false;
+                            video.removeAttribute('muted');
+                            video.play().catch((error) => {
+                                console.warn('Sound resume failed:', error);
+                            });
+                        }
+                    });
+
+                    marker.addEventListener('markerLost', () => {
+                        markerVisible = false;
+
+                        // Pause only while the muted playback is still in progress.
+                        if (mode === 'silent' && !silentFinished) {
+                            video.pause();
+                        }
+
+                        // Pause only while the sound playback is still in progress.
+                        if (mode === 'sound' && !soundFinished) {
+                            video.pause();
+                        }
+                    });
+
+                    // Replay the video once with sound from the beginning when the user taps the screen.
+                    const handleUserTap = () => {
+                        if (!markerVisible) return;
+                        playSoundOnceFromStart();
+                    };
+
+                    document.addEventListener('touchstart', handleUserTap, { once: false });
+                    document.addEventListener('click', handleUserTap, { once: false });
+                },
 
                 setPlaneSize: function (aspect) {
                     const height = this.data.height;
