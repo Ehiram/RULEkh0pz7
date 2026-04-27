@@ -13,76 +13,96 @@
                     height: { type: 'number', default: 1.4 }
                 },
 
-                init: function () {
-                    const plane = this.el;
-                    const video = this.data.video;
-                    const marker = plane.closest('a-marker');
+init: function () {
+    const plane = this.el;
+    const video = this.data.video;
+    const marker = plane.closest('a-marker');
 
-                    let hasStarted = false;
-                    let hasFinished = false;
+    let hasStarted = false;
+    let hasFinished = false;
+    let userUnlocked = false;
 
-                    if (!video || !marker) {
-                        console.warn('Video or marker not found.');
-                        return;
-                    }
+    // with sound
+    const unlockAudio = () => {
+        if (userUnlocked) return;
+        userUnlocked = true;
 
-                    // ratio
-                    const fallbackAspect = 9 / 16;
-                    this.setPlaneSize(fallbackAspect);
+        video.muted = false;
+        video.volume = 1;
 
-                    // put vid on plane first
-                    plane.setAttribute('material', {
-                        shader: 'flat',
-                        src: '#vid',
-                        side: 'double'
-                    });
+        video.play().then(() => {
+            video.pause();
+            video.currentTime = 0;
+        }).catch((err) => {
+            console.log('Initial audio unlock failed:', err);
+        });
+    };
 
-                    const applyAspectRatio = () => {
-                        if (video.videoWidth && video.videoHeight) {
-                            const aspect = video.videoWidth / video.videoHeight;
-                            this.setPlaneSize(aspect);
-                            console.log('Video aspect applied:', video.videoWidth, video.videoHeight, aspect);
-                        } else {
-                            console.warn('Video metadata not available. Using fallback 9:16.');
-                        }
-                    };
+    document.addEventListener('click', unlockAudio, { once: true });
+    document.addEventListener('touchstart', unlockAudio, { once: true });
 
-                    if (video.readyState >= 1) {
-                        applyAspectRatio();
-                    } else {
-                        video.addEventListener('loadedmetadata', applyAspectRatio, { once: true });
-                    }
+    if (!video || !marker) {
+        console.warn('Video or marker not found.');
+        return;
+    }
 
-                    video.addEventListener('ended', () => {
-                        hasFinished = true;
-                        video.pause();
+    // vertical
+    const fallbackAspect = 9 / 16;
+    this.setPlaneSize(fallbackAspect);
 
-                        // keep last frame
-                        if (video.duration && isFinite(video.duration)) {
-                            video.currentTime = Math.max(video.duration - 0.05, 0);
-                        }
-                    });
+    plane.setAttribute('material', {
+        shader: 'flat',
+        src: '#vid',
+        side: 'double'
+    });
 
-                    marker.addEventListener('markerFound', () => {
-                        if (hasFinished) return;
+    const applyAspectRatio = () => {
+        if (video.videoWidth && video.videoHeight) {
+            const aspect = video.videoWidth / video.videoHeight;
+            this.setPlaneSize(aspect);
+            console.log('Video aspect applied:', video.videoWidth, video.videoHeight, aspect);
+        } else {
+            console.warn('Video metadata not available. Using fallback 9:16.');
+        }
+    };
 
-                        // play once
-                        if (!hasStarted) {
-                            hasStarted = true;
-                            video.currentTime = 0;
-                        }
+    if (video.readyState >= 1) {
+        applyAspectRatio();
+    } else {
+        video.addEventListener('loadedmetadata', applyAspectRatio, { once: true });
+    }
 
-                        video.play().catch((error) => {
-                            console.warn('Video play failed:', error);
-                        });
-                    });
+    video.addEventListener('ended', () => {
+        hasFinished = true;
+        video.pause();
 
-                    marker.addEventListener('markerLost', () => {
-                        if (!hasFinished) {
-                            video.pause();
-                        }
-                    });
-                },
+        if (video.duration && isFinite(video.duration)) {
+            video.currentTime = Math.max(video.duration - 0.05, 0);
+        }
+    });
+
+    marker.addEventListener('markerFound', () => {
+        if (hasFinished) return;
+
+        video.muted = false;
+        video.volume = 1;
+
+        if (!hasStarted) {
+            hasStarted = true;
+            video.currentTime = 0;
+        }
+
+        video.play().catch((error) => {
+            console.warn('Video play failed:', error);
+        });
+    });
+
+    marker.addEventListener('markerLost', () => {
+        if (!hasFinished) {
+            video.pause();
+        }
+    });
+},
 
                 setPlaneSize: function (aspect) {
                     const height = this.data.height;
