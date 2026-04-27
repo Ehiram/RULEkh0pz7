@@ -7,61 +7,93 @@
         <script src="https://raw.githack.com/AR-js-org/studio-backend/master/src/modules/marker/tools/gesture-handler.js"></script>
 
         <script>
-            AFRAME.registerComponent('videohandler', {
+            AFRAME.registerComponent('video-plane-handler', {
+                schema: {
+                    video: { type: 'selector' },
+                    height: { type: 'number', default: 1.4 }
+                },
+
                 init: function () {
-                    const marker = this.el;
-                    const video = document.querySelector('#vid');
-                    const videoPlane = document.querySelector('#videoPlane');
+                    const plane = this.el;
+                    const video = this.data.video;
+                    const marker = plane.closest('a-marker');
 
-                    let hasEnded = false;
+                    let hasStarted = false;
+                    let hasFinished = false;
 
-                    this.vid = video;
+                    if (!video || !marker) {
+                        console.warn('Video or marker not found.');
+                        return;
+                    }
 
-                    // original ratio
-                    video.addEventListener('loadedmetadata', function () {
-                        const aspect = video.videoWidth / video.videoHeight;
+                    // ratio
+                    const fallbackAspect = 9 / 16;
+                    this.setPlaneSize(fallbackAspect);
 
-                        // height base
-                        const displayHeight = 1.4;
-                        const displayWidth = displayHeight * aspect;
-
-                        videoPlane.setAttribute('width', displayWidth);
-                        videoPlane.setAttribute('height', displayHeight);
+                    // put vid on plane first
+                    plane.setAttribute('material', {
+                        shader: 'flat',
+                        src: '#vid',
+                        side: 'double'
                     });
 
-                    // play only once
-                    video.addEventListener('ended', function () {
-                        hasEnded = true;
+                    const applyAspectRatio = () => {
+                        if (video.videoWidth && video.videoHeight) {
+                            const aspect = video.videoWidth / video.videoHeight;
+                            this.setPlaneSize(aspect);
+                            console.log('Video aspect applied:', video.videoWidth, video.videoHeight, aspect);
+                        } else {
+                            console.warn('Video metadata not available. Using fallback 9:16.');
+                        }
+                    };
+
+                    if (video.readyState >= 1) {
+                        applyAspectRatio();
+                    } else {
+                        video.addEventListener('loadedmetadata', applyAspectRatio, { once: true });
+                    }
+
+                    video.addEventListener('ended', () => {
+                        hasFinished = true;
                         video.pause();
 
                         // keep last frame
-                        if (video.duration) {
-                            video.currentTime = video.duration;
+                        if (video.duration && isFinite(video.duration)) {
+                            video.currentTime = Math.max(video.duration - 0.05, 0);
                         }
                     });
 
-                    marker.addEventListener('markerFound', function () {
-                        if (hasEnded) return;
+                    marker.addEventListener('markerFound', () => {
+                        if (hasFinished) return;
 
-                        video.muted = false;
-                        video.volume = 1;
-
-                        const playPromise = video.play();
-
-                        if (playPromise !== undefined) {
-                            playPromise.catch(function (error) {
-                                console.warn('音声付き自動再生がブラウザにブロックされました:', error);
-                            });
+                        // play once
+                        if (!hasStarted) {
+                            hasStarted = true;
+                            video.currentTime = 0;
                         }
+
+                        video.play().catch((error) => {
+                            console.warn('Video play failed:', error);
+                        });
                     });
 
-                    marker.addEventListener('markerLost', function () {
-                        //just in case
-                        if (!hasEnded) {
+                    marker.addEventListener('markerLost', () => {
+                        if (!hasFinished) {
                             video.pause();
                         }
                     });
                 },
+
+                setPlaneSize: function (aspect) {
+                    const height = this.data.height;
+                    const width = height * aspect;
+
+                    this.el.setAttribute('geometry', {
+                        primitive: 'plane',
+                        width: width,
+                        height: height
+                    });
+                }
             });
         </script>
     </head>
@@ -80,10 +112,9 @@
                     id="vid"
                     src="assets/asset.mp4"
                     preload="auto"
-                    response-type="arraybuffer"
-                    crossorigin
                     webkit-playsinline
                     playsinline
+                    muted
                 ></video>
             </a-assets>
 
@@ -91,7 +122,6 @@
                 type="pattern"
                 preset="custom"
                 url="assets/marker.patt"
-                videohandler
                 smooth="true"
                 smoothCount="10"
                 smoothTolerance="0.01"
@@ -101,14 +131,14 @@
                 cursor="fuse: false; rayOrigin: mouse;"
                 id="markerA"
             >
-                <a-video
+                <a-plane
                     id="videoPlane"
-                    src="#vid"
                     position="0 0.1 0"
                     rotation="-45 0 0"
                     class="clickable"
                     gesture-handler
-                ></a-video>
+                    video-plane-handler="video: #vid; height: 1.4"
+                ></a-plane>
             </a-marker>
 
             <a-entity camera></a-entity>
