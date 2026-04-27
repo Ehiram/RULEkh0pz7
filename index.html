@@ -23,8 +23,7 @@
                     let silentStarted = false;
                     let silentFinished = false;
 
-                    let soundStarted = false;
-                    let soundFinished = false;
+                    let soundPlaying = false;
 
                     let mode = 'idle';
                     // idle / silent / silent-ended / sound / sound-ended
@@ -92,25 +91,23 @@
                         });
                     };
 
-                    const playSoundOnceFromStart = () => {
-                        if (soundStarted || soundFinished) return;
+const playSoundOnceFromStart = () => {
+    mode = 'sound';
+    soundPlaying = true;
 
-                        soundStarted = true;
-                        mode = 'sound';
+    // Switch to sound playback when the user taps the screen.
+    video.muted = false;
+    video.removeAttribute('muted');
+    video.volume = 1;
 
-                        // Switch to sound playback when the user taps the screen.
-                        video.muted = false;
-                        video.removeAttribute('muted');
-                        video.volume = 1;
+    // Always replay from the beginning on each tap.
+    video.pause();
+    video.currentTime = 0;
 
-                        // Restart from the beginning for the sound playback.
-                        video.pause();
-                        video.currentTime = 0;
-
-                        video.play().catch((error) => {
-                            console.warn('Sound video play failed:', error);
-                        });
-                    };
+    video.play().catch((error) => {
+        console.warn('Sound video play failed:', error);
+    });
+};
 
                     video.addEventListener('ended', () => {
                         if (mode === 'silent') {
@@ -120,12 +117,12 @@
                             return;
                         }
 
-                        if (mode === 'sound') {
-                            soundFinished = true;
-                            mode = 'sound-ended';
-                            stopAtLastFrame();
-                            return;
-                        }
+if (mode === 'sound') {
+    soundPlaying = false;
+    mode = 'sound-ended';
+    stopAtLastFrame();
+    return;
+}
 
                         stopAtLastFrame();
                     });
@@ -147,14 +144,13 @@
                             });
                         }
 
-                        // Resume sound playback only if it was paused before finishing.
-                        if (mode === 'sound' && !soundFinished) {
-                            video.muted = false;
-                            video.removeAttribute('muted');
-                            video.play().catch((error) => {
-                                console.warn('Sound resume failed:', error);
-                            });
-                        }
+if (mode === 'sound' && soundPlaying) {
+    video.muted = false;
+    video.removeAttribute('muted');
+    video.play().catch((error) => {
+        console.warn('Sound resume failed:', error);
+    });
+}
                     });
 
                     marker.addEventListener('markerLost', () => {
@@ -165,10 +161,9 @@
                             video.pause();
                         }
 
-                        // Pause only while the sound playback is still in progress.
-                        if (mode === 'sound' && !soundFinished) {
-                            video.pause();
-                        }
+if (mode === 'sound' && soundPlaying) {
+    video.pause();
+}
                     });
 
                     // Replay the video once with sound from the beginning when the user taps the screen.
